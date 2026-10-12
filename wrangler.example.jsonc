@@ -1,0 +1,21 @@
+// Copy this file to wrangler.jsonc and fill in your own values (wrangler.jsonc is git-ignored).
+{
+  "name": "dormledger",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // daily cleanup of cleared histories older than 48 hours
+  "triggers": { "crons": ["17 3 * * *"] },
+  "vars": {
+    // the public URL of your Worker (https only) – used for the Mini App buttons
+    "APP_URL": "https://dormledger.YOUR-SUBDOMAIN.workers.dev"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dormledger",
+      // printed by: npx wrangler d1 create dormledger
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

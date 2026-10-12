@@ -1,0 +1,22 @@
+# dependencies & build output
+node_modules/
+.wrangler/
+dist/
+
+# local secrets & config (never commit these)
+.dev.vars
+.env
+.env.*
+wrangler.jsonc
+
+# database exports / backups contain real user data
+backup*.sql
+*.backup.sql
+*.bak
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

@@ -1,0 +1,20 @@
+{
+  "name": "dormledger",
+  "version": "1.0.0",
+  "description": "Telegram Mini App + bot for splitting dorm expenses, built on Cloudflare Workers and D1.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["telegram", "telegram-bot", "telegram-mini-app", "cloudflare-workers", "d1", "expense-splitter", "persian", "rtl"],
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "build:ui": "node scripts/build-ui.mjs",
+    "test": "node --test --experimental-strip-types --no-warnings tests/unit/*.test.ts",
+    "deploy": "node scripts/build-ui.mjs && wrangler deploy",
+    "migrate:remote": "wrangler d1 migrations apply dormledger --remote",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

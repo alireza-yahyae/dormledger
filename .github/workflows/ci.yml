@@ -1,0 +1,19 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit tests (no dependencies needed)
+        run: npm test
+      - name: UI bundle is up to date
+        run: |
+          node scripts/build-ui.mjs
+          git diff --exit-code src/ui.ts
