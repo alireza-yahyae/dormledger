@@ -12,6 +12,7 @@ wrangler.jsonc
 # database exports / backups contain real user data
 backup*.sql
 *.backup.sql
+before-update*.sql
 *.bak
 
 # OS / editor
@@ -20,3 +21,4 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+backups/

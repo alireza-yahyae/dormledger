@@ -4,13 +4,14 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 import worker from '../../src/index.ts';
+import { respondMemberRequest } from '../../src/bot.ts';
 import { validateInitData } from '../../src/security.ts';
 import { buildCsv, csvCell } from '../../src/api.ts';
 
 function makeDb() {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys=ON');
-  for (const f of ['0001_initial_schema.sql', '0002_bot_state.sql', '0003_expense_category.sql', '0004_rooms_and_settlement_confirm.sql', '0005_decimal_amounts_and_nickname.sql', '0006_require_confirm.sql', '0007_history_archive.sql']) db.exec(readFileSync(new URL('../../migrations/' + f, import.meta.url), 'utf8'));
+  for (const f of ['0001_initial_schema.sql', '0002_bot_state.sql', '0003_expense_category.sql', '0004_rooms_and_settlement_confirm.sql', '0005_decimal_amounts_and_nickname.sql', '0006_require_confirm.sql', '0007_history_archive.sql', '0008_consent_rounding.sql', '0009_substitute_members.sql']) db.exec(readFileSync(new URL('../../migrations/' + f, import.meta.url), 'utf8'));
   const mk = (sql: string, params: unknown[] = []) => ({
     bind: (...a: unknown[]) => mk(sql, a),
     first: async () => db.prepare(sql).get(...(params as any[])) ?? null,
@@ -29,13 +30,15 @@ function initData(userId: number, authDate = Math.floor(Date.now() / 1000), toke
   return p.toString();
 }
 const sent: any[] = [];
-globalThis.fetch = (async (url: string, init: any) => { sent.push({ url: String(url), form: init.body instanceof FormData }); return new Response('{"ok":true}'); }) as any;
+globalThis.fetch = (async (url: string, init: any) => { sent.push({ url: String(url), form: init.body instanceof FormData, body: typeof init.body === 'string' ? JSON.parse(init.body) : null }); return new Response('{"ok":true}'); }) as any;
 const env: any = { DB: makeDb(), BOT_TOKEN: TOKEN, WEBHOOK_SECRET: 's' };
 const call = async (uid: number | null, method: string, path: string, body?: any, init?: string) => {
   const r = await worker.fetch(new Request('http://x' + path, { method, headers: { 'X-Telegram-Init-Data': init ?? (uid === null ? '' : initData(uid)), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }), env);
   return { status: r.status, body: await r.json().catch(() => null) as any };
 };
 const sql = (q: string, ...a: any[]) => env.DB.raw.prepare(q).all(...a) as any[];
+/** The invited person answers the consent prompt (in production this is the button in the bot). */
+const answer = async (tgId: number, ok = true) => { for (const x of sql(`SELECT id FROM member_requests WHERE telegram_user_id=? AND status='pending'`, tgId)) await respondMemberRequest(env, tgId, { first_name: 'U' + tgId }, x.id, ok ? 'ok' : 'no'); };
 
 test('initData validation: valid, tampered, wrong token, stale', async () => {
   assert.equal((await validateInitData(initData(5), TOKEN))?.id, 5);
@@ -148,6 +151,9 @@ test('CSV escaping and formula-injection guard', () => {
   assert.equal(csvCell('a,b'), '"a,b"');
   assert.equal(csvCell('say "hi"'), '"say ""hi"""');
   assert.equal(csvCell('=SUM(A1)'), "'=SUM(A1)");
+  assert.equal(csvCell('-5 تومان'), "'-5 تومان", 'text starting with - is still guarded');
+  assert.equal(csvCell(-12.5), '-12.5', 'A1: a negative balance stays a number');
+  assert.equal(csvCell(0), '0');
   assert.ok(buildCsv([['شرح', 1]]).startsWith('\uFEFF'));
 });
 
@@ -160,11 +166,15 @@ test('rooms: several rooms per user, switching, deleting; add members by Telegra
   assert.equal(s.expenses.length, 0, 'rooms are isolated');
   // add by IDs (digits in Persian too), with and without names
   let r = await call(1, 'POST', '/api/member/ids', { text: '۷۷۷۷۷۷۷ رضا\n8888888' });
-  assert.deepEqual(r.body.added, ['رضا', 'عضو جدید']);
+  assert.deepEqual(r.body.requested, ['رضا', 'عضو جدید'], 'a request is sent, nobody is added yet');
+  assert.equal((await call(7777777, 'GET', '/api/state')).status, 403, 'not a member before accepting');
+  await answer(7777777); await answer(8888888, false);
+  assert.equal((await call(8888888, 'GET', '/api/state')).status, 403, 'declined = not a member');
+  assert.equal(sql(`SELECT display_name FROM members WHERE telegram_user_id=7777777`)[0].display_name, 'رضا', 'admin-typed name is used');
   r = await call(1, 'POST', '/api/member/ids', { text: '7777777' });
-  assert.deepEqual(r.body.skipped, ['7777777'], 'duplicate skipped');
+  assert.deepEqual(r.body.skipped, ['7777777'], 'existing member skipped');
   assert.equal((await call(1, 'POST', '/api/member/ids', { text: 'abc' })).status, 400);
-  assert.equal((await call(7777777, 'GET', '/api/state')).status, 200, 'added user is a member already');
+  assert.equal((await call(7777777, 'GET', '/api/state')).status, 200, 'accepted user is a member');
   assert.equal((await call(7777777, 'POST', '/api/member/ids', { text: '99999999' })).status, 403, 'plain member cannot add');
   // switch back and forth
   assert.equal((await call(1, 'POST', '/api/room/switch', { id: 'nope' })).status, 404);
@@ -183,6 +193,7 @@ test('rooms: several rooms per user, switching, deleting; add members by Telegra
 test('API: edit an expense (amount, split, payer) with version guard and permissions', async () => {
   await call(31001, 'POST', '/api/dorm', { name: 'ویرایش' });
   assert.equal((await call(31001, 'POST', '/api/member/ids', { text: '31002 رضا\n31003 امیر' })).status, 200);
+  await answer(31002); await answer(31003);
   let s = (await call(31001, 'GET', '/api/state')).body;
   const [a, b, c] = s.members.map((x: any) => x.id);
   let r = await call(31002, 'POST', '/api/expense', { key: 'edit-key-1', amount: '10000', description: 'نان', payerId: b, method: 'equal', participants: [a, b, c], date: s.today });
@@ -212,6 +223,7 @@ test('API: edit an expense (amount, split, payer) with version guard and permiss
 test('API: room option without creditor confirmation; stale pending payments are cancelled after an edit', async () => {
   await call(32001, 'POST', '/api/dorm', { name: 'مستقیم', requireConfirm: false });
   assert.equal((await call(32001, 'POST', '/api/member/ids', { text: '32002 رضا' })).status, 200);
+  await answer(32002);
   let s = (await call(32001, 'GET', '/api/state')).body;
   assert.equal(s.dorm.requireConfirm, false);
   const [a, b] = s.members.map((x: any) => x.id);
@@ -244,6 +256,7 @@ test('API: room option without creditor confirmation; stale pending payments are
 test('API: clear whole history, restore within 48h, purge after', async () => {
   await call(33001, 'POST', '/api/dorm', { name: 'تاریخچه', requireConfirm: false });
   assert.equal((await call(33001, 'POST', '/api/member/ids', { text: '33002 رضا' })).status, 200);
+  await answer(33002);
   let s = (await call(33001, 'GET', '/api/state')).body;
   const [a, b] = s.members.map((x: any) => x.id);
   assert.equal((await call(33001, 'POST', '/api/history/clear', {})).status, 409, 'nothing to clear yet');
@@ -289,4 +302,136 @@ test('API: clear whole history, restore within 48h, purge after', async () => {
   assert.equal(sql('SELECT COUNT(*) n FROM archived_expenses WHERE archive_id=?', arch)[0].n, 0, 'rows really deleted');
   assert.equal(sql('SELECT COUNT(*) n FROM archived_allocations WHERE archive_id=?', arch)[0].n, 0);
   assert.equal(sql('SELECT COUNT(*) n FROM archived_settlements WHERE archive_id=?', arch)[0].n, 0);
+});
+
+test('A15: adding by Telegram ID needs consent (accept, decline, replay, stranger, expiry, undelivered)', async () => {
+  await call(41001, 'POST', '/api/dorm', { name: 'رضایت' });
+  let r = await call(41001, 'POST', '/api/member/ids', { text: '41002 سارا\n41003 نیما' });
+  assert.deepEqual(r.body.requested, ['سارا', 'نیما']);
+  const dm = sent.filter((x) => x.body?.chat_id === 41002 && /دعوت/.test(x.body.text)).pop();
+  assert.match(dm.body.reply_markup.inline_keyboard[0][0].callback_data, /^mr:ok:/, 'invitee gets accept/decline buttons');
+  assert.equal(sql('SELECT COUNT(*) n FROM members WHERE telegram_user_id IN (41002,41003)')[0].n, 0, 'nobody added without consent');
+  const rid = (tg: number) => sql(`SELECT id FROM member_requests WHERE telegram_user_id=? AND status='pending'`, tg)[0]?.id;
+  const id2 = rid(41002), id3 = rid(41003);
+  assert.equal((await respondMemberRequest(env, 99999, {}, id2, 'ok')).ok, false, 'a stranger cannot answer for someone else');
+  assert.equal((await respondMemberRequest(env, 41002, { first_name: 'x' }, id2, 'ok')).ok, true);
+  assert.equal((await respondMemberRequest(env, 41002, {}, id2, 'ok')).ok, false, 'replay is rejected');
+  assert.equal((await respondMemberRequest(env, 41003, {}, id3, 'no')).ok, true);
+  assert.equal(sql('SELECT COUNT(*) n FROM members WHERE telegram_user_id=41003')[0].n, 0);
+  assert.equal((await call(41002, 'GET', '/api/state')).status, 200);
+  assert.ok(sent.some((x) => x.body?.chat_id === 41001 && /پذیرفت/.test(x.body.text)), 'inviter is told');
+  assert.ok(sent.some((x) => x.body?.chat_id === 41001 && /رد کرد/.test(x.body.text)), 'inviter is told about the decline');
+  // expired request
+  await call(41001, 'POST', '/api/member/ids', { text: '41004 علی' });
+  env.DB.raw.prepare(`UPDATE member_requests SET expires_at='2000-01-01T00:00:00.000Z' WHERE telegram_user_id=41004`).run();
+  assert.equal((await respondMemberRequest(env, 41004, {}, rid(41004), 'ok')).ok, false, 'expired');
+  // Telegram refuses to deliver (user never opened the bot): admin is told, request stays for /start
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response('{"ok":false}', { status: 403 })) as any;
+  r = await call(41001, 'POST', '/api/member/ids', { text: '41005 مینا' });
+  globalThis.fetch = realFetch;
+  assert.deepEqual(r.body.undelivered, ['مینا']);
+  assert.ok(rid(41005), 'request is kept so the person sees it after /start');
+});
+
+test('B1: participants and payer are notified of a new expense, the author is not', async () => {
+  await call(42001, 'POST', '/api/dorm', { name: 'اعلان', requireConfirm: false });
+  await call(42001, 'POST', '/api/member/ids', { text: '42002 رضا\n42003 امیر\n42004 سارا' });
+  for (const t of [42002, 42003, 42004]) await answer(t);
+  const s = (await call(42001, 'GET', '/api/state')).body;
+  const id = (tg: number) => sql('SELECT id FROM members WHERE telegram_user_id=?', tg)[0].id;
+  sent.length = 0;
+  // payer = reza (42002), shared by ali(author), reza, amir; sara is not part of it
+  const r = await call(42001, 'POST', '/api/expense', { key: 'notify-key-1', amount: '3000000', description: 'پیتزا', payerId: id(42002), method: 'equal', participants: [id(42001), id(42002), id(42003)], date: s.today });
+  assert.equal(r.status, 200);
+  const to = (tg: number) => sent.filter((x) => x.body?.chat_id === tg && /پیتزا/.test(x.body.text ?? '')).map((x) => x.body.text);
+  assert.equal(to(42001).length, 0, 'author is not notified');
+  assert.equal(to(42004).length, 0, 'non-participant is not notified');
+  assert.match(to(42003)[0], /سهم شما/); assert.match(to(42003)[0], /پرداخت‌کننده: رضا/);
+  assert.match(to(42002)[0], /پرداخت‌کننده: شما/);
+  // an idempotent replay must not notify again
+  sent.length = 0;
+  await call(42001, 'POST', '/api/expense', { key: 'notify-key-1', amount: '3000000', description: 'پیتزا', payerId: id(42002), method: 'equal', participants: [id(42001), id(42002), id(42003)], date: s.today });
+  assert.equal(to(42003).length, 0, 'replay is silent');
+  // with an execution context the notifications are deferred, not awaited
+  const pending: Promise<unknown>[] = [];
+  sent.length = 0;
+  const resp = await worker.fetch(new Request('http://x/api/expense', { method: 'POST', headers: { 'X-Telegram-Init-Data': initData(42001), 'content-type': 'application/json' }, body: JSON.stringify({ key: 'notify-key-2', amount: '1000000', description: 'چای', payerId: id(42001), method: 'equal', participants: [id(42001), id(42003)], date: s.today }) }), env, { waitUntil: (p: Promise<unknown>) => { pending.push(p); } });
+  assert.equal(resp.status, 200); assert.equal(pending.length, 1, 'work handed to waitUntil');
+  await Promise.all(pending);
+  assert.equal(sent.filter((x) => x.body?.chat_id === 42003 && /چای/.test(x.body.text ?? '')).length, 1);
+});
+
+test('B14 leave room + C5 optional rounding + deactivation uses the effective balance', async () => {
+  await call(43001, 'POST', '/api/dorm', { name: 'ترک', requireConfirm: false });
+  await call(43001, 'POST', '/api/member/ids', { text: '43002 رضا\n43003 امیر' });
+  await answer(43002); await answer(43003);
+  const id = (tg: number) => sql('SELECT id FROM members WHERE telegram_user_id=?', tg)[0].id;
+  const today = (await call(43001, 'GET', '/api/state')).body.today;
+  // 100001 toman split between ali (payer) and reza = 50000.50 each
+  assert.equal((await call(43001, 'POST', '/api/expense', { key: 'round-key-001', amount: '10000100', description: 'قبض', payerId: id(43001), method: 'equal', participants: [id(43001), id(43002)], date: today })).status, 200);
+  let s = (await call(43001, 'GET', '/api/state')).body;
+  assert.equal(s.plan[0].amount, 5000050, 'exact by default');
+  assert.equal((await call(43002, 'POST', '/api/room/settings', { roundTo: 1000 })).status, 403, 'admin only');
+  assert.equal((await call(43001, 'POST', '/api/room/settings', { roundTo: 7 })).status, 400, 'only the offered units');
+  assert.equal((await call(43001, 'POST', '/api/room/settings', { roundTo: 1000 })).status, 200);
+  s = (await call(43001, 'GET', '/api/state')).body;
+  assert.equal(s.dorm.roundTo, 1000); assert.equal(s.dorm.requireConfirm, false, 'untouched option keeps its value');
+  assert.deepEqual(s.plan.map((p: any) => p.amount), [5000000], 'suggested payment is a round 50,000 toman');
+  assert.equal(s.balances[id(43002)], -5000050, 'real balances stay exact');
+  // reza still owes -> cannot leave; amir (zero) can
+  let r = await call(43002, 'POST', '/api/room/leave', {}); assert.equal(r.status, 400); assert.match(r.body.message, /تراز/);
+  assert.equal((await call(43001, 'POST', '/api/room/leave', {})).status, 400, 'the owner cannot leave');
+  r = await call(43003, 'POST', '/api/room/leave', {}); assert.equal(r.status, 200);
+  assert.equal((await call(43003, 'GET', '/api/state')).status, 403, 'amir has no room now');
+  assert.equal(sql('SELECT active FROM members WHERE telegram_user_id=43003')[0].active, 0);
+  assert.ok(sent.some((x) => x.body?.chat_id === 43001 && /خارج شد/.test(x.body.text ?? '')), 'admins are told');
+  // reza pays the rounded amount; the 0.50 toman residue counts as settled
+  assert.equal((await call(43002, 'POST', '/api/settlement', { from: id(43002), to: id(43001), amount: 5000000 })).status, 200);
+  s = (await call(43001, 'GET', '/api/state')).body;
+  assert.deepEqual(s.plan, [], 'nothing left to suggest'); assert.equal(s.balances[id(43002)], -50);
+  assert.equal((await call(43001, 'POST', '/api/member/deactivate', { id: id(43002) })).status, 200, 'effective balance is zero');
+});
+
+test('API: guest members (عضو مهمان) — admin only (even for themself), visible in state, still chargeable, isolated per room', async () => {
+  await call(44001, 'POST', '/api/dorm', { name: 'اتاق مهمان' });
+  await call(44001, 'POST', '/api/member/ids', { text: '44002 رضا\n44003 امیر' });
+  await answer(44002); await answer(44003);
+  const id = (tg: number) => sql('SELECT id FROM members WHERE telegram_user_id=?', tg)[0].id as string;
+  const subOf = async (who: number, tg: number) => (await call(who, 'GET', '/api/state')).body.members.find((m: any) => m.id === id(tg)).sub;
+  assert.equal(await subOf(44001, 44002), false, 'everybody starts as a main member');
+
+  // admin only
+  let r = await call(44002, 'POST', '/api/member/substitute', { id: id(44003), substitute: true });
+  assert.equal(r.status, 403); assert.equal(await subOf(44001, 44003), false);
+  // the admin marks a member...
+  r = await call(44001, 'POST', '/api/member/substitute', { id: id(44003), substitute: true });
+  assert.equal(r.status, 200); assert.equal(r.body.substitute, true); assert.equal(await subOf(44001, 44003), true);
+  assert.equal(await subOf(44002, 44003), true, 'every member sees it');
+  // ...and themself (the owner), then switches back by omitting the value (toggle)
+  assert.equal((await call(44001, 'POST', '/api/member/substitute', { id: id(44001), substitute: true })).body.substitute, true);
+  assert.equal(await subOf(44001, 44001), true);
+  assert.equal((await call(44001, 'POST', '/api/member/substitute', { id: id(44001) })).body.substitute, false, 'toggle');
+  // idempotent: same value twice writes one audit row only
+  await call(44001, 'POST', '/api/member/substitute', { id: id(44003), substitute: true });
+  assert.equal(sql(`SELECT COUNT(*) n FROM audit_events WHERE action='substitute' AND entity_id=?`, id(44003))[0].n, 1);
+
+  // validation + isolation
+  assert.equal((await call(44001, 'POST', '/api/member/substitute', {})).status, 400);
+  assert.equal((await call(44001, 'POST', '/api/member/substitute', { id: id(44002), substitute: 'yes' })).status, 400);
+  assert.equal((await call(44001, 'POST', '/api/member/substitute', { id: 'nope', substitute: true })).status, 404);
+  await call(44010, 'POST', '/api/dorm', { name: 'اتاق دیگر' });
+  assert.equal((await call(44001, 'POST', '/api/member/substitute', { id: id(44010), substitute: true })).status, 404, 'cannot touch another room');
+  assert.equal(sql('SELECT is_substitute s FROM members WHERE telegram_user_id=44010')[0].s, 0);
+
+  // it only changes the DEFAULT: the author can still charge a guest member, and balances follow the ticks
+  const today = (await call(44001, 'GET', '/api/state')).body.today;
+  r = await call(44001, 'POST', '/api/expense', { key: 'sub-key-0001', amount: '9000000', description: 'سینما', payerId: id(44001), method: 'equal', participants: [id(44001), id(44003)], date: today });
+  assert.equal(r.status, 200);
+  const s = (await call(44001, 'GET', '/api/state')).body;
+  assert.equal(s.balances[id(44003)], -4500000); assert.equal(s.balances[id(44002)], 0, 'a main member who was not ticked owes nothing');
+
+  // deactivated members cannot be changed
+  assert.equal((await call(44001, 'POST', '/api/member/deactivate', { id: id(44002) })).status, 200);
+  assert.equal((await call(44001, 'POST', '/api/member/substitute', { id: id(44002), substitute: true })).status, 404);
 });

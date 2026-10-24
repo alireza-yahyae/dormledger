@@ -1,6 +1,8 @@
 import { validateInitData, rateLimited } from './security.ts';
-import { me, myRooms, switchRoom, deleteRoom, activeMembers, isAdmin, today, ledger, createInviteCode, joinWithCode, createDormitory, createPendingSettlement, respondSettlement, reconcilePending, clearHistory, restoreHistory, purgeExpiredArchives, listArchives, parseIdEntries, addMembersByIds } from './bot.ts';
+import { me, myRooms, switchRoom, deleteRoom, activeMembers, isAdmin, today, ledger, createInviteCode, joinWithCode, createDormitory, createPendingSettlement, respondSettlement, reconcilePending, clearHistory, restoreHistory, purgeExpiredArchives, listArchives, parseIdEntries, addMembersByIds, leaveRoom, notifyExpense, setSubstitute } from './bot.ts';
+type Ctx = { waitUntil(p: Promise<unknown>): void };
 import { validMinor, SCALE } from './domain/money.ts';
+import { csvCell, buildCsv } from './csv.ts';
 import { equalAllocation, customAllocation } from './domain/allocation.ts';
 import type { Allocation } from './domain/allocation.ts';
 
@@ -30,19 +32,12 @@ const validDate = (v: unknown) => {
   return v;
 };
 
-export function csvCell(v: unknown): string {
-  let s = String(v ?? '');
-  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // spreadsheet formula-injection guard
-  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}
-export function buildCsv(rows: any[][]): string {
-  return '\uFEFF' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
-}
+export { csvCell, buildCsv };
 
 async function stateFor(env: Env, m: any, uid: number) {
   const d = m.dormitory_id;
-  const members = await qa(env, `SELECT id, display_name, nickname, role, active, telegram_user_id FROM members WHERE dormitory_id=? ORDER BY rowid`, d);
-  const { net, plan } = await ledger(env, d);
+  const members = await qa(env, `SELECT id, display_name, nickname, role, active, telegram_user_id, is_substitute FROM members WHERE dormitory_id=? ORDER BY rowid`, d);
+  const { net, plan, unit } = await ledger(env, d);
   // Aggregate period data in SQL so dashboard insights are not limited to the 300-row activity feed.
   const todayIso = today();
   const currentMonth = todayIso.slice(0, 7);
@@ -72,8 +67,8 @@ async function stateFor(env: Env, m: any, uid: number) {
   });
   return {
     me: { id: m.id, name: m.display_name, nick: m.nickname ?? '', role: m.role, admin: isAdmin(m) },
-    dorm: { id: m.dormitory_id, name: m.dname, requireConfirm: m.rc !== 0 },
-    members: members.map((x) => ({ id: x.id, name: x.display_name, nick: x.nickname ?? '', role: x.role, active: !!x.active, linked: !!x.telegram_user_id })),
+    dorm: { id: m.dormitory_id, name: m.dname, requireConfirm: m.rc !== 0, roundTo: unit / SCALE },
+    members: members.map((x) => ({ id: x.id, name: x.display_name, nick: x.nickname ?? '', role: x.role, active: !!x.active, linked: !!x.telegram_user_id, sub: !!x.is_substitute })),
     balances: Object.fromEntries(net),
     plan: plan.map((p) => ({ from: p.fromId, to: p.toId, amount: p.amount })),
     rooms: rooms.map((r) => ({ id: r.id, name: r.name, role: r.role, current: r.id === m.dormitory_id })),
@@ -114,7 +109,7 @@ async function parseExpense(env: Env, m: any, b: any) {
   return { amt: amt.value, desc, notes, category, date, payerId: b.payerId as string, method: b.method as string, allocs };
 }
 
-async function createExpense(env: Env, m: any, b: any) {
+async function createExpense(env: Env, m: any, b: any, ctx?: Ctx) {
   const key = str(b.key, 8, 64, 'کلید');
   const prev = await q1(env, 'SELECT response_json FROM idempotency_keys WHERE dormitory_id=? AND key=?', m.dormitory_id, key);
   if (prev) return JSON.parse(prev.response_json);
@@ -134,6 +129,7 @@ async function createExpense(env: Env, m: any, b: any) {
     if (again) return JSON.parse(again.response_json); // concurrent duplicate request
     throw e;
   }
+  await notifyExpense(env, m, { desc, total: p.amt, payerId: p.payerId, allocs }, ctx);
   return resp;
 }
 
@@ -159,7 +155,7 @@ async function updateExpense(env: Env, m: any, b: any) {
   return { ok: true, cancelledPending };
 }
 
-async function route(env: Env, req: Request, path: string, uid: number, from: any) {
+async function route(env: Env, req: Request, path: string, uid: number, from: any, ctx?: Ctx) {
   const body = req.method === 'POST' ? await req.json().catch(() => { throw bad('درخواست نامعتبر است'); }) : {};
   const m = await me(env, uid);
   if ((path === '/api/dorm' || path === '/api/room/create') && req.method === 'POST') {
@@ -184,7 +180,7 @@ async function route(env: Env, req: Request, path: string, uid: number, from: an
   const admin = () => { if (!isAdmin(m)) throw new ApiError(403, 'forbidden', 'فقط مدیر می‌تواند این کار را انجام دهد'); };
 
   if (path === '/api/state' && req.method === 'GET') return stateFor(env, m, uid);
-  if (path === '/api/expense' && req.method === 'POST') return createExpense(env, m, body);
+  if (path === '/api/expense' && req.method === 'POST') return createExpense(env, m, body, ctx);
   if (path === '/api/expense/cancel' && req.method === 'POST') {
     const e = await q1(env, `SELECT id, created_by, status, version FROM expenses WHERE id=? AND dormitory_id=?`, String(body.id), m.dormitory_id);
     if (!e) throw new ApiError(404, 'not_found', 'هزینه پیدا نشد');
@@ -206,9 +202,18 @@ async function route(env: Env, req: Request, path: string, uid: number, from: an
     if (!r.ok) throw new ApiError(r.error.startsWith('فقط') ? 403 : 404, 'not_found', r.error);
     return r;
   }
+  if (path === '/api/room/leave' && req.method === 'POST') {
+    const r = await leaveRoom(env, uid);
+    if (!r.ok) throw bad(r.error, 'cannot_leave');
+    return { ok: true };
+  }
   if (path === '/api/room/settings' && req.method === 'POST') {
     if (!isAdmin(m)) throw new ApiError(403, 'forbidden', 'فقط مدیر می‌تواند تنظیمات اتاق را تغییر دهد');
-    await env.DB.prepare(`UPDATE dormitories SET require_confirm=? WHERE id=?`).bind(body.requireConfirm === false ? 0 : 1, m.dormitory_id).run();
+    if (body.requireConfirm !== undefined) await env.DB.prepare(`UPDATE dormitories SET require_confirm=? WHERE id=?`).bind(body.requireConfirm === false ? 0 : 1, m.dormitory_id).run();
+    if (body.roundTo !== undefined) {
+      if (![0, 1000].includes(Number(body.roundTo))) throw bad('مقدار گرد کردن نامعتبر است');
+      await env.DB.prepare(`UPDATE dormitories SET round_to=? WHERE id=?`).bind(Number(body.roundTo) * SCALE, m.dormitory_id).run();
+    }
     return { ok: true };
   }
   if (path === '/api/settlement' && req.method === 'POST') {
@@ -233,7 +238,7 @@ async function route(env: Env, req: Request, path: string, uid: number, from: an
     admin();
     const entries = parseIdEntries(String(body.text ?? ''));
     if (!entries.length) throw bad('آیدی عددی پیدا نشد (حداقل ۵ رقم)');
-    return addMembersByIds(env, m, entries);
+    return addMembersByIds(env, m, entries); // { requested, undelivered, skipped }: people join only after THEY accept
   }
   if (path === '/api/member/rename' && req.method === 'POST') {
     admin();
@@ -251,13 +256,21 @@ async function route(env: Env, req: Request, path: string, uid: number, from: an
     ]);
     return { id };
   }
+  if (path === '/api/member/substitute' && req.method === 'POST') {
+    admin();
+    if (typeof body.id !== 'string') throw bad('عضو نامعتبر است');
+    if (body.substitute !== undefined && typeof body.substitute !== 'boolean') throw bad('مقدار نامعتبر است');
+    const r = await setSubstitute(env, m, body.id, body.substitute); // the admin may also change themself
+    if (!r.ok) throw r.notFound ? new ApiError(404, 'not_found', r.error) : new ApiError(403, 'forbidden', r.error);
+    return { ok: true, substitute: r.substitute };
+  }
   if (path === '/api/member/deactivate' && req.method === 'POST') {
     admin();
     const t = await q1(env, `SELECT id, role FROM members WHERE id=? AND dormitory_id=? AND active=1`, String(body.id), m.dormitory_id);
     if (!t) throw new ApiError(404, 'not_found', 'عضو پیدا نشد');
     if (t.role === 'owner') throw bad('مدیر اصلی را نمی‌توان غیرفعال کرد');
-    const { net } = await ledger(env, m.dormitory_id);
-    if ((net.get(t.id) ?? 0) !== 0) throw bad('این عضو هنوز تراز غیرصفر دارد؛ اول تسویه کنید');
+    const { eff } = await ledger(env, m.dormitory_id);
+    if ((eff.get(t.id) ?? 0) !== 0) throw bad('این عضو هنوز تراز غیرصفر دارد؛ اول تسویه کنید');
     await env.DB.prepare(`UPDATE members SET active=0 WHERE id=?`).bind(t.id).run();
     return { ok: true };
   }
@@ -297,14 +310,14 @@ async function route(env: Env, req: Request, path: string, uid: number, from: an
   throw new ApiError(404, 'not_found', 'یافت نشد');
 }
 
-export async function handleApi(req: Request, env: Env): Promise<Response> {
+export async function handleApi(req: Request, env: Env, ctx?: Ctx): Promise<Response> {
   const cid = crypto.randomUUID().slice(0, 8);
   const path = new URL(req.url).pathname;
   try {
     const user = await validateInitData(req.headers.get('X-Telegram-Init-Data') ?? '', env.BOT_TOKEN, Number(env.INITDATA_MAX_AGE ?? 86400));
     if (!user) return json({ error: 'unauthorized', message: 'برنامه را از داخل تلگرام باز کنید' }, 401);
     if (rateLimited('u' + user.id)) return json({ error: 'rate_limited', message: 'درخواست‌ها زیاد است؛ کمی صبر کنید' }, 429);
-    return json(await route(env, req, path, user.id, user));
+    return json(await route(env, req, path, user.id, user, ctx));
   } catch (e) {
     if (e instanceof ApiError) return json({ error: e.code, message: e.message }, e.status);
     console.log(JSON.stringify({ evt: 'api_error', cid, path, msg: String((e as Error)?.message).slice(0, 200) }));

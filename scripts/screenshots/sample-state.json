@@ -1,0 +1,382 @@
+{
+ "me": {
+  "id": "m-ali",
+  "name": "علی",
+  "nick": "ابوعلی",
+  "role": "owner",
+  "admin": true
+ },
+ "dorm": {
+  "id": "r-214",
+  "name": "اتاق ۲۱۴",
+  "requireConfirm": true,
+  "roundTo": 1000
+ },
+ "members": [
+  {
+   "id": "m-ali",
+   "name": "علی",
+   "nick": "ابوعلی",
+   "role": "owner",
+   "active": true,
+   "linked": true,
+   "sub": false
+  },
+  {
+   "id": "m-reza",
+   "name": "رضا",
+   "nick": "",
+   "role": "admin",
+   "active": true,
+   "linked": true,
+   "sub": false
+  },
+  {
+   "id": "m-amir",
+   "name": "امیر",
+   "nick": "",
+   "role": "member",
+   "active": true,
+   "linked": true,
+   "sub": false
+  },
+  {
+   "id": "m-sina",
+   "name": "سینا",
+   "nick": "",
+   "role": "member",
+   "active": true,
+   "linked": true,
+   "sub": false
+  },
+  {
+   "id": "m-nima",
+   "name": "نیما",
+   "nick": "",
+   "role": "member",
+   "active": true,
+   "linked": true,
+   "sub": true
+  },
+  {
+   "id": "m-sara",
+   "name": "سارا",
+   "nick": "",
+   "role": "member",
+   "active": true,
+   "linked": false,
+   "sub": true
+  }
+ ],
+ "balances": {
+  "m-ali": -24600000,
+  "m-reza": 35400000,
+  "m-amir": -40200000,
+  "m-sina": -15600000,
+  "m-nima": 45000000,
+  "m-sara": 0
+ },
+ "plan": [
+  {
+   "from": "m-amir",
+   "to": "m-nima",
+   "amount": 40200000
+  },
+  {
+   "from": "m-ali",
+   "to": "m-nima",
+   "amount": 4800000
+  },
+  {
+   "from": "m-ali",
+   "to": "m-reza",
+   "amount": 19800000
+  },
+  {
+   "from": "m-sina",
+   "to": "m-reza",
+   "amount": 15600000
+  }
+ ],
+ "rooms": [
+  {
+   "id": "r-214",
+   "name": "اتاق ۲۱۴",
+   "role": "owner",
+   "current": true
+  },
+  {
+   "id": "r-north",
+   "name": "خانه‌ی شمال",
+   "role": "member",
+   "current": false
+  }
+ ],
+ "pending": [
+  {
+   "id": "s2",
+   "from": "m-sina",
+   "to": "m-reza",
+   "amount": 4000000,
+   "date": "2026-10-23"
+  }
+ ],
+ "expenses": [
+  {
+   "id": "e6",
+   "desc": "خرید خانه",
+   "total": 27000000,
+   "payer": "m-sina",
+   "method": "custom",
+   "date": "2026-10-07",
+   "category": "خرید خانه",
+   "notes": null,
+   "status": "active",
+   "version": 1,
+   "by": "m-sina",
+   "reason": null,
+   "allocs": [
+    {
+     "m": "m-ali",
+     "a": 9000000
+    },
+    {
+     "m": "m-amir",
+     "a": 12000000
+    },
+    {
+     "m": "m-sina",
+     "a": 6000000
+    }
+   ]
+  },
+  {
+   "id": "e5",
+   "desc": "اینترنت ماهانه",
+   "total": 44000000,
+   "payer": "m-reza",
+   "method": "equal",
+   "date": "2026-10-10",
+   "category": "قبوض",
+   "notes": null,
+   "status": "active",
+   "version": 1,
+   "by": "m-reza",
+   "reason": null,
+   "allocs": [
+    {
+     "m": "m-ali",
+     "a": 11000000
+    },
+    {
+     "m": "m-amir",
+     "a": 11000000
+    },
+    {
+     "m": "m-reza",
+     "a": 11000000
+    },
+    {
+     "m": "m-sina",
+     "a": 11000000
+    }
+   ]
+  },
+  {
+   "id": "e4",
+   "desc": "سینما",
+   "total": 60000000,
+   "payer": "m-nima",
+   "method": "equal",
+   "date": "2026-10-15",
+   "category": "تفریح",
+   "notes": null,
+   "status": "active",
+   "version": 1,
+   "by": "m-nima",
+   "reason": null,
+   "allocs": [
+    {
+     "m": "m-ali",
+     "a": 15000000
+    },
+    {
+     "m": "m-amir",
+     "a": 15000000
+    },
+    {
+     "m": "m-nima",
+     "a": 15000000
+    },
+    {
+     "m": "m-reza",
+     "a": 15000000
+    }
+   ]
+  },
+  {
+   "id": "e3",
+   "desc": "نان، پنیر و لبنیات",
+   "total": 18400000,
+   "payer": "m-amir",
+   "method": "equal",
+   "date": "2026-10-18",
+   "category": "غذا",
+   "notes": null,
+   "status": "active",
+   "version": 1,
+   "by": "m-amir",
+   "reason": null,
+   "allocs": [
+    {
+     "m": "m-ali",
+     "a": 4600000
+    },
+    {
+     "m": "m-amir",
+     "a": 4600000
+    },
+    {
+     "m": "m-reza",
+     "a": 4600000
+    },
+    {
+     "m": "m-sina",
+     "a": 4600000
+    }
+   ]
+  },
+  {
+   "id": "e2",
+   "desc": "قبض برق",
+   "total": 36000000,
+   "payer": "m-ali",
+   "method": "equal",
+   "date": "2026-10-20",
+   "category": "قبوض",
+   "notes": null,
+   "status": "active",
+   "version": 1,
+   "by": "m-ali",
+   "reason": null,
+   "allocs": [
+    {
+     "m": "m-ali",
+     "a": 9000000
+    },
+    {
+     "m": "m-amir",
+     "a": 9000000
+    },
+    {
+     "m": "m-reza",
+     "a": 9000000
+    },
+    {
+     "m": "m-sina",
+     "a": 9000000
+    }
+   ]
+  },
+  {
+   "id": "e1",
+   "desc": "پیتزا شب جمعه",
+   "total": 48000000,
+   "payer": "m-reza",
+   "method": "equal",
+   "date": "2026-10-22",
+   "category": "غذا",
+   "notes": null,
+   "status": "active",
+   "version": 1,
+   "by": "m-reza",
+   "reason": null,
+   "allocs": [
+    {
+     "m": "m-ali",
+     "a": 12000000
+    },
+    {
+     "m": "m-amir",
+     "a": 12000000
+    },
+    {
+     "m": "m-reza",
+     "a": 12000000
+    },
+    {
+     "m": "m-sina",
+     "a": 12000000
+    }
+   ]
+  }
+ ],
+ "settlements": [
+  {
+   "id": "s1",
+   "from": "m-amir",
+   "to": "m-reza",
+   "amount": 5000000,
+   "date": "2026-10-12"
+  }
+ ],
+ "archives": [],
+ "totals": {
+  "total": 233400000,
+  "paid": {
+   "m-reza": 92000000,
+   "m-ali": 36000000,
+   "m-amir": 18400000,
+   "m-nima": 60000000,
+   "m-sina": 27000000
+  },
+  "share": {
+   "m-ali": 60600000,
+   "m-amir": 63600000,
+   "m-reza": 51600000,
+   "m-sina": 42600000,
+   "m-nima": 15000000
+  },
+  "category": {
+   "غذا": 66400000,
+   "قبوض": 80000000,
+   "تفریح": 60000000,
+   "خرید خانه": 27000000
+  }
+ },
+ "categories": [
+  "غذا",
+  "قبوض",
+  "خرید خانه",
+  "حمل‌ونقل",
+  "تفریح",
+  "سایر"
+ ],
+ "today": "2026-10-23",
+ "monthly": {
+  "2026-05": {
+   "total": 91000000,
+   "count": 7
+  },
+  "2026-06": {
+   "total": 112000000,
+   "count": 9
+  },
+  "2026-07": {
+   "total": 138000000,
+   "count": 11
+  },
+  "2026-08": {
+   "total": 126000000,
+   "count": 10
+  },
+  "2026-09": {
+   "total": 159000000,
+   "count": 12
+  },
+  "2026-10": {
+   "total": 233400000,
+   "count": 6
+  }
+ }
+}

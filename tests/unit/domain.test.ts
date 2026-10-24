@@ -117,3 +117,76 @@ test('decimals: up to 2 places, stored in hundredths of a toman', () => {
   assert.ok(formatToman(3333).includes('۳۳٫۳۳'));
   assert.ok(!formatToman(5000000).includes('٫'));
 });
+
+// ---- C1: fewest payments ----
+import { roundBalances } from '../../src/domain/settlement.ts';
+const applyTransfers = (b: Map<string, number>, ts: { fromId: string; toId: string; amount: number }[]) => {
+  const n = new Map(b);
+  for (const t of ts) { n.set(t.fromId, (n.get(t.fromId) ?? 0) + t.amount); n.set(t.toId, (n.get(t.toId) ?? 0) - t.amount); }
+  return n;
+};
+/** Independent reference: max number of disjoint zero-sum groups by plain recursion. Fewest payments = people - groups. */
+const maxGroups = (v: number[]): number => {
+  if (!v.length) return 0;
+  const [first, ...rest] = v; let best = -Infinity;
+  for (let m = 0; m < 1 << rest.length; m++) {
+    let sum = first; const left: number[] = [];
+    rest.forEach((x, i) => { if ((m >> i) & 1) sum += x; else left.push(x); });
+    if (sum === 0) best = Math.max(best, 1 + maxGroups(left));
+  }
+  return best;
+};
+
+test('C1: independent groups are settled separately (greedy would need 4 payments, 3 is enough)', () => {
+  const b = new Map([['a', 5], ['b', 4], ['e', -3], ['f', -2], ['g', -4]]);
+  const t = proposeTransfers(b);
+  assert.equal(t.length, 3);
+  assert.deepEqual(t, [{ fromId: 'e', toId: 'a', amount: 3 }, { fromId: 'f', toId: 'a', amount: 2 }, { fromId: 'g', toId: 'b', amount: 4 }]);
+  assert.ok([...applyTransfers(b, t).values()].every((x) => x === 0));
+});
+
+test('C1: edge cases and determinism', () => {
+  assert.deepEqual(proposeTransfers(new Map()), []);
+  assert.deepEqual(proposeTransfers(new Map([['a', 0], ['b', 0]])), []);
+  assert.deepEqual(proposeTransfers(new Map([['b', -7], ['a', 7]])), [{ fromId: 'b', toId: 'a', amount: 7 }]);
+  assert.throws(() => proposeTransfers(new Map([['a', 1]])), /sum to zero/);
+  const m = new Map([['x', 3], ['y', -3], ['z', 0], ['w', 8], ['v', -8]]);
+  assert.deepEqual(proposeTransfers(m), proposeTransfers(new Map([...m].reverse())), 'input order does not matter');
+});
+
+test('C1: property — always settles everything with the provably fewest payments (400 random cases)', () => {
+  let seed = 7; const rnd = (n: number) => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed % n; };
+  for (let k = 0; k < 400; k++) {
+    const n = 2 + rnd(7), b = new Map<string, number>(); let sum = 0;
+    for (let i = 0; i < n - 1; i++) { const v = rnd(11) - 5; b.set('m' + i, v); sum += v; }
+    b.set('m' + (n - 1), -sum);
+    const t = proposeTransfers(b), nz = [...b.values()].filter((x) => x !== 0);
+    assert.ok([...applyTransfers(b, t).values()].every((x) => x === 0), 'every balance ends at zero');
+    assert.ok(t.every((x) => x.amount > 0 && x.fromId !== x.toId));
+    assert.equal(t.length, nz.length ? nz.length - maxGroups(nz) : 0, JSON.stringify([...b]));
+  }
+});
+
+test('C1: more than 14 non-zero balances falls back to greedy and still settles', () => {
+  const b = new Map<string, number>(); let sum = 0;
+  for (let i = 0; i < 19; i++) { const v = (i % 2 ? 1 : -1) * (i + 1) * 13; b.set('p' + String(i).padStart(2, '0'), v); sum += v; }
+  b.set('zz', -sum);
+  assert.ok([...applyTransfers(b, proposeTransfers(b)).values()].every((x) => x === 0));
+});
+
+// ---- C5: rounding ----
+test('C5: rounding keeps the total at zero, stays within one unit, and results are multiples of the unit', () => {
+  const r = roundBalances(new Map([['a', 140000], ['b', -60000], ['c', -80000]]), 100000);
+  assert.deepEqual([...r].sort(), [['a', 200000], ['b', -100000], ['c', -100000]]);
+  assert.deepEqual([...roundBalances(new Map([['a', 5], ['b', -5]]), 0)], [['a', 5], ['b', -5]], 'unit 0 = exact');
+  let seed = 11; const rnd = (n: number) => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed % n; };
+  for (let k = 0; k < 300; k++) {
+    const n = 2 + rnd(8), b = new Map<string, number>(); let sum = 0;
+    for (let i = 0; i < n - 1; i++) { const v = rnd(900001) - 450000; b.set('m' + i, v); sum += v; }
+    b.set('m' + (n - 1), -sum);
+    const r2 = roundBalances(b, 100000);
+    assert.equal([...r2.values()].reduce((a, x) => a + x, 0), 0, 'total stays zero');
+    // (note: -100000 % 100000 is -0 in JS, so this is `=== 0`, not strictEqual)
+    for (const [id, v] of r2) { assert.ok(v % 100000 === 0, 'multiple of the unit'); assert.ok(Math.abs(v - b.get(id)!) < 100000, 'within one unit'); }
+  }
+});

@@ -74,6 +74,8 @@ input.big{font-size:26px;font-weight:700;min-height:60px}
 .seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px}
 .seg button{flex:1;min-height:40px;border-radius:9px;font-weight:600;color:var(--muted)}
 .seg button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.subbox{margin-top:12px;padding:12px;border:1.5px dashed var(--line);border-radius:14px;background:color-mix(in srgb,var(--accent-bg) 38%,var(--surface))}
+.subbox .subt{font-weight:650;font-size:13px;margin-bottom:8px}
 .shr{display:flex;align-items:center;gap:8px;padding:6px 0}
 .shr span{flex:1}.shr input{width:140px}
 .remain{padding:12px;border-radius:12px;font-weight:600;text-align:center;margin-top:8px}
@@ -233,19 +235,26 @@ function vSettle(){
  }
  if(!d.plan.length&&!d.pending.length)h+='<div class="card empty"><b>همه‌چیز تسویه است</b>بدهی‌ای بین اعضا وجود ندارد.</div>';
  else if(d.plan.length){
-  h+='<h2>پیشنهاد تسویه</h2><p class="muted small" style="margin-bottom:8px">فقط خودِ بدهکار می‌تواند پرداخت خودش را ثبت کند. بعد از ثبت، دریافت‌کننده باید تأیید کند تا در ترازها اعمال شود.</p><div class="card list">';
+  h+='<h2>پیشنهاد تسویه</h2><p class="muted small" style="margin-bottom:8px">فقط خودِ بدهکار می‌تواند پرداخت خودش را ثبت کند. بعد از ثبت، دریافت‌کننده باید تأیید کند تا در ترازها اعمال شود.</p>'+(d.dorm.roundTo?'<p class="muted small" style="margin-bottom:8px">مبلغ‌های پیشنهادی به نزدیک‌ترین '+fmt(d.dorm.roundTo)+' تومان گرد شده‌اند؛ ترازهای واقعی دقیق می‌مانند.</p>':'')+'<div class="card list">';
   h+=d.plan.map(p=>'<div class="item"><div class="grow"><div class="t" style="white-space:normal">'+esc(nm(p.from))+' باید به '+esc(nm(p.to))+' بدهد</div><div class="amt num '+(p.to===me?'pos':p.from===me?'neg':'')+'">'+toman(p.amount)+'</div></div>'+(p.from===me?'<button class="btn g sm" data-a="pay" data-f="'+esc(p.from)+'" data-t="'+esc(p.to)+'" data-n="'+p.amount+'">پرداخت کردم</button>':'')+'</div>').join('')+'</div>';
  }
  h+='<h2>تراز اعضا</h2><div class="card list">'+d.members.filter(m=>m.active||bal(m.id)!==0).map(m=>{const b=bal(m.id);return '<div class="item"><div class="grow">'+esc(m.name)+'</div><span class="tag '+(b>0?'c':b<0?'d':'')+'">'+(b>0?'طلبکار':b<0?'بدهکار':'تسویه')+'</span><div class="amt num '+(b>0?'pos':b<0?'neg':'')+'" style="min-width:110px;text-align:end">'+(b===0?'—':toman(Math.abs(b)))+'</div></div>'}).join('')+'</div>';
  if(d.settlements.length)h+='<h2>پرداخت‌های تأییدشده</h2><div class="card list">'+d.settlements.map(s=>'<div class="item"><div class="grow">'+esc(nm(s.from))+' ← '+esc(nm(s.to))+'<div class="m">'+esc(pdate(s.date))+'</div></div><div class="amt num">'+toman(s.amount)+'</div></div>').join('')+'</div>';
  return h;
 }
-function vMembers(){
+function memberRow(m){
  const d=S.d;
- let h='<div class="top"><h1>اعضا</h1>'+(d.me.admin?'<button class="btn p sm" data-a="addids">'+ic('plus')+'افزودن</button>':'')+'</div><div class="card list">';
- h+=d.members.filter(m=>m.active).map(m=>'<div class="item"><div class="grow"><div class="t">'+esc(m.name)+(m.nick?' <span class="muted small">«'+esc(m.nick)+'»</span>':'')+'</div><div class="m">'+(m.role==='owner'?'مدیر اصلی':m.role==='admin'?'مدیر':'عضو')+' · '+(m.linked?'وصل به تلگرام':'هنوز وصل نشده')+'</div></div>'+
+ return '<div class="item"><div class="grow"><div class="t">'+esc(m.name)+(m.nick?' <span class="muted small">«'+esc(m.nick)+'»</span>':'')+'</div><div class="m">'+(m.role==='owner'?'مدیر اصلی':m.role==='admin'?'مدیر':'عضو')+(m.sub?' · مهمان':'')+' · '+(m.linked?'وصل به تلگرام':'هنوز وصل نشده')+'</div></div>'+
   (d.me.admin&&!m.linked?'<button class="btn g sm" data-a="inv" data-id="'+esc(m.id)+'">کد دعوت</button>':'')+
-  (d.me.admin&&m.role!=='owner'?'<button class="icon-btn" aria-label="گزینه‌ها برای '+esc(m.name)+'" data-a="mopt" data-id="'+esc(m.id)+'">'+ic('more')+'</button>':'')+'</div>').join('')+'</div>';
+  (d.me.admin?'<button class="chip" data-a="msub" data-id="'+esc(m.id)+'" aria-pressed="'+!!m.sub+'" aria-label="مهمان بودن '+esc(m.name)+'">مهمان</button>':'')+
+  (d.me.admin&&m.role!=='owner'?'<button class="icon-btn" aria-label="گزینه‌ها برای '+esc(m.name)+'" data-a="mopt" data-id="'+esc(m.id)+'">'+ic('more')+'</button>':'')+'</div>';
+}
+function vMembers(){
+ const d=S.d,act=d.members.filter(m=>m.active),main=act.filter(m=>!m.sub),subs=act.filter(m=>m.sub);
+ let h='<div class="top"><h1>اعضا</h1>'+(d.me.admin?'<button class="btn p sm" data-a="addids">'+ic('plus')+'افزودن</button>':'')+'</div>';
+ h+='<div class="card list">'+main.map(memberRow).join('')+'</div>';
+ if(subs.length)h+='<h2>اعضای مهمان</h2><p class="muted small" style="margin-bottom:8px">در ثبت هزینه پیش‌فرض تیک ندارند، مگر اینکه خودشان پرداخت‌کننده باشند؛ در غیر این صورت هر وقت شریک بودند، ثبت‌کننده‌ی هزینه تیکشان را می‌زند.</p><div class="card list">'+subs.map(memberRow).join('')+'</div>';
+ if(d.me.admin)h+='<p class="muted small" style="margin-top:10px">دکمه‌ی «مهمان» کنار هر نفر (حتی خودتان) او را به کادر اعضای مهمان می‌برد؛ در ثبت هزینه، اعضای اصلی تیک‌خورده‌اند و مهمان‌ها بدون تیک (مگر اینکه خودشان پرداخت کرده باشند).</p>';
  h+='<div class="row" style="margin-top:12px"><button class="btn s" data-a="myprofile">نام و نام مستعار من</button></div>';
  if(d.me.admin)h+='<div class="row" style="margin-top:12px"><button class="btn s" data-a="inv" data-id="">کد دعوت</button><button class="btn s" data-a="addm">بدون تلگرام</button></div>';
  return h;
@@ -261,7 +270,7 @@ function vMore(){
  let h='<div class="top"><h1>بیشتر</h1></div>';
  if(!d.totals.total)h+='<div class="card empty"><b>هنوز داده‌ای برای نمودار نیست</b>بعد از ثبت هزینه‌ها اینجا گزارش می‌بینید.</div>';
  else h+=bars('پرداخت هر عضو',d.totals.paid,nm)+bars('سهم هر عضو از هزینه‌ها',d.totals.share,nm)+bars('هزینه به تفکیک دسته',d.totals.category,x=>x);
- h+='<h2>اتاق‌ها</h2><div class="card list"><button class="item" data-a="rooms"><div class="grow"><div class="t">تعویض، ساخت یا حذف اتاق</div><div class="m">اتاق فعلی: '+esc(d.dorm.name)+'</div></div></button></div>'+(d.me.admin?'<h2>تنظیمات اتاق</h2><div class="card list"><button class="item" data-a="togglerc"><div class="grow"><div class="t">تأیید طلب‌کار برای پرداخت دنگ: '+(d.dorm.requireConfirm?'روشن':'خاموش')+'</div><div class="m">'+(d.dorm.requireConfirm?'پرداخت‌ها بعد از تأیید طلب‌کار در ترازها اعمال می‌شوند':'پرداخت‌ها بدون تأیید و فوراً اعمال می‌شوند')+' · برای تغییر بزنید</div></div></button></div><h2>تاریخچه‌ی حساب‌ها</h2><div class="card list"><button class="item" data-a="clearhist"><div class="grow"><div class="t neg">پاک کردن کل تاریخچه</div><div class="m">همه‌ی هزینه‌ها و پرداخت‌ها پاک می‌شوند؛ تا ۴۸ ساعت قابل بازگردانی است</div></div></button>'+(d.archives||[]).map(a=>'<button class="item" data-a="restorehist" data-id="'+esc(a.id)+'"><div class="grow"><div class="t pos">بازگردانی تاریخچه‌ی پاک‌شده</div><div class="m">'+fmt(a.expenses)+' هزینه، '+fmt(a.settlements)+' پرداخت · '+fmt(Math.max(0,Math.ceil((Date.parse(a.expiresAt)-Date.now())/36e5)))+' ساعت مانده</div></div></button>').join('')+'</div>':'')+'<h2>گزارش</h2><div class="card list"><button class="item" data-a="export"><div class="grow"><div class="t">دریافت گزارش (CSV)</div><div class="m">فایل برای اکسل در همین چت ربات فرستاده می‌شود</div></div></button><button class="item" data-a="refresh"><div class="grow"><div class="t">به‌روزرسانی اطلاعات</div></div></button></div>';
+ h+='<h2>اتاق‌ها</h2><div class="card list"><button class="item" data-a="rooms"><div class="grow"><div class="t">تعویض، ساخت یا حذف اتاق</div><div class="m">اتاق فعلی: '+esc(d.dorm.name)+'</div></div></button>'+(d.me.role!=='owner'?'<button class="item" data-a="leave"><div class="grow"><div class="t neg">ترک این اتاق</div><div class="m">فقط وقتی ترازتان صفر است؛ سابقه‌ی مالی‌تان می‌ماند</div></div></button>':'')+'</div>'+(d.me.admin?'<h2>تنظیمات اتاق</h2><div class="card list"><button class="item" data-a="togglerc"><div class="grow"><div class="t">تأیید طلب‌کار برای پرداخت دنگ: '+(d.dorm.requireConfirm?'روشن':'خاموش')+'</div><div class="m">'+(d.dorm.requireConfirm?'پرداخت‌ها بعد از تأیید طلب‌کار در ترازها اعمال می‌شوند':'پرداخت‌ها بدون تأیید و فوراً اعمال می‌شوند')+' · برای تغییر بزنید</div></div></button><button class="item" data-a="roundto"><div class="grow"><div class="t">گرد کردن مبلغ پیشنهادی تسویه: '+(d.dorm.roundTo?'روشن':'خاموش')+'</div><div class="m">'+(d.dorm.roundTo?'پرداخت‌های پیشنهادی به نزدیک‌ترین '+fmt(d.dorm.roundTo)+' تومان گرد می‌شوند':'مبلغ‌های پیشنهادی دقیق هستند')+' · برای تغییر بزنید</div></div></button></div><h2>تاریخچه‌ی حساب‌ها</h2><div class="card list"><button class="item" data-a="clearhist"><div class="grow"><div class="t neg">پاک کردن کل تاریخچه</div><div class="m">همه‌ی هزینه‌ها و پرداخت‌ها پاک می‌شوند؛ تا ۴۸ ساعت قابل بازگردانی است</div></div></button>'+(d.archives||[]).map(a=>'<button class="item" data-a="restorehist" data-id="'+esc(a.id)+'"><div class="grow"><div class="t pos">بازگردانی تاریخچه‌ی پاک‌شده</div><div class="m">'+fmt(a.expenses)+' هزینه، '+fmt(a.settlements)+' پرداخت · '+fmt(Math.max(0,Math.ceil((Date.parse(a.expiresAt)-Date.now())/36e5)))+' ساعت مانده</div></div></button>').join('')+'</div>':'')+'<h2>گزارش</h2><div class="card list"><button class="item" data-a="export"><div class="grow"><div class="t">دریافت گزارش (CSV)</div><div class="m">فایل برای اکسل در همین چت ربات فرستاده می‌شود</div></div></button><button class="item" data-a="refresh"><div class="grow"><div class="t">به‌روزرسانی اطلاعات</div></div></button></div>';
  h+='<p class="muted small" style="margin-top:16px">همه‌ی ترازها از روی هزینه‌ها و پرداخت‌های ذخیره‌شده محاسبه می‌شوند. مبلغ‌ها به تومان و با حداکثر دو رقم اعشار هستند.</p>';
  return h;
 }
@@ -299,10 +308,15 @@ async function act(btn,fn){
  try{await fn()}catch(e){toast(e.message,true)}finally{busy=false;if(btn&&btn.isConnected){btn.disabled=false;btn.innerHTML=old}}
 }
 /* ---------- add expense ---------- */
+/* default ticks: every main member, plus a guest member only when that guest is the one who paid */
+function defSel(payer){return S.d.members.filter(m=>m.active&&(!m.sub||m.id===payer)).map(m=>m.id)}
 function newForm(){
  const d=S.d;
- F={key:uid(),amount:'',desc:'',cat:'',payer:d.me.id,method:'equal',sel:d.members.filter(m=>m.active).map(m=>m.id),shares:{},date:d.today,notes:'',step:'form',touched:false,done:null};
+ F={key:uid(),amount:'',desc:'',cat:'',payer:d.me.id,method:'equal',sel:defSel(d.me.id),shares:{},date:d.today,notes:'',step:'form',touched:false,done:null};
 }
+/* main members come first; guest members (DB column is_substitute, shown as «مهمان») sit in their own dashed box and start unticked, unless they are the payer */
+function partChips(list){return list.map(m=>'<button class="chip" data-a="fpart" data-id="'+esc(m.id)+'" aria-pressed="'+F.sel.includes(m.id)+'">'+(F.sel.includes(m.id)?ic('check'):'')+esc(m.name)+'</button>').join('')}
+function shareRow(m){return '<div class="shr"><span>'+esc(m.name)+'</span><input class="ltr num sh" data-id="'+esc(m.id)+'" inputmode="decimal" autocomplete="off" value="'+esc(F.shares[m.id]||'')+'" placeholder="۰" aria-label="سهم '+esc(m.name)+'"></div>'}
 function parseDec(s){const t=digits(s).replace(/[٫\/]/g,'.');if(!/^\d+(\.\d{1,2})?$/.test(t))return null;const p=t.split('.');return Number(p[0])*100+Number(((p[1]||'')+'00').slice(0,2))}
 function parseAmt(s){const t=digits(s);if(!t)return {e:'مبلغ را وارد کنید'};const n=parseDec(s);if(n===null)return {e:'مبلغ را به‌صورت عدد مثبت (حداکثر ۲ رقم اعشار) وارد کنید'};if(!Number.isSafeInteger(n)||n>1e14)return {e:'مبلغ بیش از حد مجاز است'};if(n<=0)return {e:'مبلغ باید بزرگ‌تر از صفر باشد'};return {v:n}}
 function equalSplit(total,ids){const s=[...ids].sort(),b=Math.floor(total/s.length),r=total%s.length;return s.map((id,i)=>({m:id,a:b+(i<r?1:0)}))}
@@ -339,9 +353,11 @@ function formBody(){
  h+='<div class="field"><span class="lab">چه کسی پرداخت کرد؟</span><div class="chips">'+act.map(m=>'<button class="chip" data-a="fpay" data-id="'+esc(m.id)+'" aria-pressed="'+(F.payer===m.id?'true':'false')+'">'+esc(m.name)+'</button>').join('')+'</div></div>';
  h+='<div class="field"><span class="lab">روش تقسیم</span><div class="seg"><button data-a="fmeth" data-v="equal" aria-pressed="'+(F.method==='equal')+'">مساوی</button><button data-a="fmeth" data-v="custom" aria-pressed="'+(F.method==='custom')+'">سفارشی</button></div></div>';
  if(F.method==='equal'){
-  h+='<div class="field"><div class="kv" style="border:0;padding:0 0 4px"><span class="lab" style="margin:0">چه کسانی شریک‌اند؟ (چند نفر را با هم انتخاب کنید)</span></div><div class="chips">'+act.map(m=>'<button class="chip" data-a="fpart" data-id="'+esc(m.id)+'" aria-pressed="'+F.sel.includes(m.id)+'">'+(F.sel.includes(m.id)?ic('check'):'')+esc(m.name)+'</button>').join('')+'</div><div class="row" style="margin-top:8px"><button class="btn g sm" data-a="fall">انتخاب همه</button><button class="btn s sm" data-a="fnone">هیچ‌کس</button></div><div class="hint num" id="eqHint">'+(c.allocs.length?'سهم هر نفر: '+toman(c.allocs[c.allocs.length-1].a)+(c.allocs[0].a!==c.allocs[c.allocs.length-1].a?' (تا '+toman(c.allocs[0].a)+')':''):'')+'</div>'+E('parts')+(F.sel.length&&!F.sel.includes(F.payer)?'<div class="hint">پرداخت‌کننده شریک نیست و سهمی ندارد.</div>':'')+'</div>';
+  const main=act.filter(m=>!m.sub),subs=act.filter(m=>m.sub);
+  h+='<div class="field"><div class="kv" style="border:0;padding:0 0 4px"><span class="lab" style="margin:0">چه کسانی شریک‌اند؟ (اعضای اصلی تیک‌خورده‌اند؛ هر کس لازم نیست را بردارید)</span></div><div class="chips">'+partChips(main)+'</div>'+(subs.length?'<div class="subbox"><div class="subt">اعضای مهمان <span class="muted small">— بدون تیک، مگر خودشان پرداخت‌کننده باشند؛ اگر در این هزینه شریک‌اند تیک بزنید</span></div><div class="chips">'+partChips(subs)+'</div></div>':'')+'<div class="row" style="margin-top:8px"><button class="btn g sm" data-a="fall">انتخاب همه</button>'+(subs.length?'<button class="btn g sm" data-a="fdef">پیش‌فرض</button>':'')+'<button class="btn s sm" data-a="fnone">هیچ‌کس</button></div><div class="hint num" id="eqHint">'+(c.allocs.length?'سهم هر نفر: '+toman(c.allocs[c.allocs.length-1].a)+(c.allocs[0].a!==c.allocs[c.allocs.length-1].a?' (تا '+toman(c.allocs[0].a)+')':''):'')+'</div>'+E('parts')+(F.sel.length&&!F.sel.includes(F.payer)?'<div class="hint">پرداخت‌کننده شریک نیست و سهمی ندارد.</div>':'')+'</div>';
  }else{
-  h+='<div class="field"><span class="lab">سهم هر نفر (خالی = شریک نیست)</span>'+act.map(m=>'<div class="shr"><span>'+esc(m.name)+'</span><input class="ltr num sh" data-id="'+esc(m.id)+'" inputmode="decimal" autocomplete="off" value="'+esc(F.shares[m.id]||'')+'" placeholder="۰" aria-label="سهم '+esc(m.name)+'"></div>').join('')+'<div id="remain">'+remainBox(c)+'</div><button class="btn g sm" style="margin-top:8px" data-a="fsplit">تقسیم مساوی</button>'+E('parts')+'</div>';
+  const main=act.filter(m=>!m.sub),subs=act.filter(m=>m.sub);
+  h+='<div class="field"><span class="lab">سهم هر نفر (خالی = شریک نیست)</span>'+main.map(shareRow).join('')+(subs.length?'<div class="subbox"><div class="subt">اعضای مهمان <span class="muted small">— فقط اگر شریک‌اند سهمشان را بنویسید</span></div>'+subs.map(shareRow).join('')+'</div>':'')+'<div id="remain">'+remainBox(c)+'</div><button class="btn g sm" style="margin-top:8px" data-a="fsplit">تقسیم مساوی</button>'+E('parts')+'</div>';
  }
  h+='<div class="field"><span class="lab">تاریخ</span><div class="chips"><button class="chip" data-a="fdate" data-v="'+d.today+'" aria-pressed="'+(F.date===d.today)+'">امروز</button><button class="chip" data-a="fdate" data-v="'+ago(1)+'" aria-pressed="'+(F.date===ago(1))+'">دیروز</button></div><div class="hint">'+esc(pdateFull(F.date))+'</div><input type="date" id="dt" class="ltr" value="'+F.date+'" max="'+d.today+'" aria-label="انتخاب تاریخ"></div>';
  h+='<div class="field"><label for="nt">یادداشت (اختیاری)</label><input id="nt" maxlength="300" value="'+esc(F.notes)+'"></div>';
@@ -384,10 +400,14 @@ const A={
  add(){newForm();showForm()},
  another(){newForm();showForm()},
  fcat(t){F.cat=F.cat===t.dataset.v?'':t.dataset.v;rerenderForm()},
- fpay(t){F.payer=t.dataset.id;rerenderForm()},
+ fpay(t){const id=t.dataset.id,old=F.payer,guest=x=>{const m=S.d.members.find(y=>y.id===x);return !!(m&&m.sub)};F.payer=id;
+  /* new expense only: a guest payer gets ticked, and stops being ticked when somebody else becomes the payer (editing keeps what was saved) */
+  if(!F.editId&&id!==old){if(guest(old))F.sel=F.sel.filter(x=>x!==old);if(guest(id)&&!F.sel.includes(id))F.sel=[...F.sel,id]}
+  rerenderForm()},
  fmeth(t){F.method=t.dataset.v;rerenderForm()},
  fpart(t){const id=t.dataset.id;F.sel=F.sel.includes(id)?F.sel.filter(x=>x!==id):[...F.sel,id];rerenderForm()},
  fall(){F.sel=S.d.members.filter(m=>m.active).map(m=>m.id);rerenderForm()},
+ fdef(){F.sel=defSel(F.payer);rerenderForm()},
  fnone(){F.sel=[];rerenderForm()},
  fdate(t){F.date=t.dataset.v;rerenderForm()},
  fsplit(){const a=parseAmt(F.amount);if(a.e){F.touched=true;rerenderForm();return}const ms=S.d.members.filter(m=>m.active),filled=ms.filter(m=>digits(F.shares[m.id]||'')!==''&&digits(F.shares[m.id]||'')!=='0'),ids=(filled.length?filled:ms).map(m=>m.id);if(a.v<ids.length){toast('مبلغ برای این تعداد نفر کافی نیست',true);return}F.shares={};for(const s of equalSplit(a.v,ids))F.shares[s.m]=String(s.a);rerenderForm()},
@@ -410,6 +430,9 @@ const A={
  restorehist(t){dlg('بازگردانی تاریخچه','<p>هزینه‌ها و پرداخت‌های پاک‌شده دوباره به ترازها اضافه می‌شوند (کنار چیزهایی که بعد از پاک کردن ثبت شده).</p>','<button class="btn s" style="flex:1" data-a="close">انصراف</button><button class="btn p" style="flex:1" data-a="restoreok" data-id="'+esc(t.dataset.id)+'">بازگردانی</button>')},
  restoreok(t){act(t,async()=>{await api('/api/history/restore',{id:t.dataset.id});closeLayer();await load();toast('تاریخچه بازگردانده شد')})},
  togglerc(t){act(t,async()=>{await api('/api/room/settings',{requireConfirm:!S.d.dorm.requireConfirm});await load();toast('ذخیره شد')})},
+ roundto(t){act(t,async()=>{await api('/api/room/settings',{roundTo:S.d.dorm.roundTo?0:1000});await load();toast('ذخیره شد')})},
+ leave(){dlg('ترک اتاق','<p>از اتاق «<b>'+esc(S.d.dorm.name)+'</b>» خارج می‌شوید. سابقه‌ی مالی‌تان می‌ماند ولی دیگر در هزینه‌های جدید دیده نمی‌شوید. این کار فقط وقتی ممکن است که ترازتان صفر باشد.</p>','<button class="btn s" style="flex:1" data-a="close">انصراف</button><button class="btn d" style="flex:2" data-a="leaveok">بله، خارج شوم</button>')},
+ leaveok(t){act(t,async()=>{await api('/api/room/leave',{});closeLayer();S.tab='home';S.loading=true;render();await load()})},
  editexp(t){
   const e=S.d.expenses.find(x=>x.id===t.dataset.id);if(!e)return;
   const act=S.d.members.filter(m=>m.active).map(m=>m.id),mm=v=>(v/100).toFixed(2).replace(/\.00$/,'');
@@ -446,8 +469,8 @@ const A={
   dlg('حذف اتاق','<p style="margin-bottom:12px">با حذف اتاق «<b>'+esc(S.d.dorm.name)+'</b>» هیچ‌کس دیگر آن را نمی‌بیند. برای تأیید، نام اتاق را دقیقاً بنویسید.</p><div class="field"><label for="dc">نام اتاق</label><input id="dc" autocomplete="off"></div>','<button class="btn s" style="flex:1" data-a="close">انصراف</button><button class="btn d" style="flex:2" data-a="delroomok">حذف اتاق</button>');
  },
  delroomok(t){act(t,async()=>{await api('/api/room/delete',{id:S.d.dorm.id,confirm:$('#dc').value});closeLayer();S.tab='home';S.loading=true;render();await load()})},
- addids(){dlg('افزودن با آیدی تلگرام','<p style="margin-bottom:12px">آیدی عددی تلگرام را بنویسید (چند تا را با فاصله یا خط جدید؛ بعد از آیدی می‌توانید اسم هم بنویسید، مثل <span class="ltr">123456789</span> رضا). آیدی عددی را هر کس از ربات @userinfobot می‌گیرد. راه ساده‌تر: در چت ربات روی «اعضا ← افزودن با آیدی تلگرام» بزنید و از مخاطبین انتخاب کنید.</p><div class="field"><label for="ids">آیدی‌ها</label><input id="ids" class="ltr" autocomplete="off" placeholder="123456789 رضا"></div>','<button class="btn s" style="flex:1" data-a="close">انصراف</button><button class="btn p" style="flex:2" data-a="idsok">افزودن</button>')},
- idsok(t){act(t,async()=>{const r=await api('/api/member/ids',{text:$('#ids').value});closeLayer();await load();toast((r.added.length?'اضافه شد: '+r.added.join('، '):'کسی اضافه نشد')+(r.skipped.length?' · ردشده: '+r.skipped.length:''),!r.added.length)})},
+ addids(){dlg('افزودن با آیدی تلگرام','<p style="margin-bottom:12px">آیدی عددی تلگرام را بنویسید (چند تا را با فاصله یا خط جدید؛ بعد از آیدی می‌توانید اسم هم بنویسید، مثل <span class="ltr">123456789</span> رضا). آیدی عددی را هر کس از ربات @userinfobot می‌گیرد. راه ساده‌تر: در چت ربات روی «اعضا ← افزودن با آیدی تلگرام» بزنید و از مخاطبین انتخاب کنید. هر کس بعد از «قبول» کردن دعوت در ربات عضو می‌شود.</p><div class="field"><label for="ids">آیدی‌ها</label><input id="ids" class="ltr" autocomplete="off" placeholder="123456789 رضا"></div>','<button class="btn s" style="flex:1" data-a="close">انصراف</button><button class="btn p" style="flex:2" data-a="idsok">افزودن</button>')},
+ idsok(t){act(t,async()=>{const r=await api('/api/member/ids',{text:$('#ids').value});closeLayer();await load();const p=[];if(r.requested.length)p.push('درخواست فرستاده شد: '+r.requested.join('، '));if(r.undelivered.length)p.push('پیام نرسید (باید ربات را /start کنند): '+r.undelivered.join('، '));if(!p.length)p.push('کسی اضافه نشد');if(r.skipped.length)p.push('ردشده: '+r.skipped.length);toast(p.join(' · '),!r.requested.length)})},
  addm(){dlg('افزودن عضو','<div class="field"><label for="mn">نام عضو</label><input id="mn" maxlength="60" placeholder="مثلاً رضا"></div><p class="muted small">بعداً با «کد دعوت» او را به تلگرامش وصل کنید.</p>','<button class="btn s" style="flex:1" data-a="close">انصراف</button><button class="btn p" style="flex:2" data-a="addmok">افزودن</button>')},
  addmok(t){act(t,async()=>{const n=$('#mn').value.trim();if(!n){toast('نام را بنویسید',true);return}await api('/api/member',{name:n});closeLayer();await load();toast('عضو اضافه شد')})},
  inv(t){act(null,async()=>{const r=await api('/api/invite',{memberId:t.dataset.id||null});dlg('کد دعوت','<p style="margin-bottom:12px">این کد یک‌بار مصرف است و ۷ روز اعتبار دارد. دوست شما باید ربات را باز کند، «دارم کد دعوت» را بزند و این کد را بفرستد.</p><div class="card" style="padding:16px;text-align:center"><div class="ltr num" style="font-size:28px;font-weight:700;letter-spacing:4px;text-align:center" id="code">'+esc(r.code)+'</div></div>','<button class="btn s" style="flex:1" data-a="close">بستن</button><button class="btn p" style="flex:1" data-a="copy" data-v="'+esc(r.code)+'">کپی</button>')})},
@@ -456,6 +479,7 @@ const A={
   const m=S.d.members.find(x=>x.id===t.dataset.id),owner=S.d.me.role==='owner';
   dlg(m.name,'<div class="field"><label for="rnm">نام نمایشی</label><div class="row"><input id="rnm" maxlength="60" value="'+esc(m.name)+'"><button class="btn g sm" style="flex:none" data-a="rename" data-id="'+esc(m.id)+'">ذخیره</button></div></div><div class="list">'+(owner?'<button class="btn s" style="margin-bottom:8px" data-a="role" data-id="'+esc(m.id)+'" data-v="'+(m.role==='admin'?'0':'1')+'">'+(m.role==='admin'?'گرفتن دسترسی مدیر':'مدیر کردن')+'</button>':'')+'<button class="btn d" data-a="deact" data-id="'+esc(m.id)+'">غیرفعال کردن عضو</button></div><p class="muted small" style="margin-top:12px">سابقه‌ی مالی عضو حفظ می‌شود. فقط وقتی تراز او صفر است می‌توان غیرفعالش کرد.</p>','<button class="btn s" style="flex:1" data-a="close">بستن</button>');
  },
+ msub(t){act(null,async()=>{const m=S.d.members.find(x=>x.id===t.dataset.id);if(!m)return;await api('/api/member/substitute',{id:m.id,substitute:!m.sub});await load();toast(m.sub?m.name+' دوباره عضو اصلی شد':m.name+' عضو مهمان شد')})},
  rename(t){act(t,async()=>{await api('/api/member/rename',{id:t.dataset.id,name:$('#rnm').value});closeLayer();await load();toast('نام ذخیره شد')})},
   myprofile(){const m=S.d.me;dlg('نام و نام مستعار من','<div class="field"><label for="pn">نام</label><input id="pn" maxlength="60" value="'+esc(m.name)+'"></div><div class="field"><label for="pk">نام مستعار (اختیاری)</label><input id="pk" maxlength="30" value="'+esc(m.nick||'')+'"></div>','<button class="btn s" style="flex:1" data-a="close">انصراف</button><button class="btn p" style="flex:2" data-a="saveprofile">ذخیره</button>')},
   saveprofile(t){act(t,async()=>{await api('/api/me/profile',{name:$('#pn').value,nick:$('#pk').value});closeLayer();await load();toast('ذخیره شد')})},
